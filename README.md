@@ -13,12 +13,13 @@ In a stressful situation, people can panic, forget the first-aid sequence, or ha
 - Local, rule-based situation detection — no API, account, database, or internet is required for core guidance.
 - 20 structured scenarios: unconsciousness, abnormal breathing, choking, severe/minor bleeding, burns, fainting, seizure, stroke warning, chest emergency, severe allergic reaction, fracture, sprain, nosebleed, heat exhaustion/heat stroke, poisoning, electric shock, drowning, and panic-type distress.
 - An urgency system: general, urgent, possible emergency, and critical.
-- An emergency-first home screen with 12 large situation cards plus a persistent Emergency control.
-- A guided question → one-action-at-a-time step flow with Previous, Next, Repeat step, and I need help controls.
+- A welcome screen with explicit Start Talking, Try Demo, and Emergency Help actions.
+- A chat-style conversation with typed and voice replies, local emergency recognition, immediate prepared guidance, and optional Previous, Next, Repeat step, and I need help controls.
 - Emergency-help panel with country-ready emergency number configuration. India is currently set to `112` in **one place** near the top of `app.js`.
 - UI and prepared first-aid content in English, Hindi, Kannada, and Urdu.
-- Demo Mode with four presentation-ready flows: choking, severe bleeding, possible stroke, and burns.
-- Browser voice input/output when the browser supports it, including Read instructions aloud, repeat, pause, resume, and stop, with a safe typed-input fallback.
+- A separate microphone-free Demo Mode with simulated choking, severe bleeding, possible stroke, and burn flows.
+- An illustrative visual guide for choking, severe bleeding, and burns. It uses text captions and abstract animations, not clinical video or procedural animations.
+- Browser voice input/output when the browser supports it, including repeat, pause/resume, and End Call, with a safe typed-input fallback.
 - Large-text and high-contrast accessibility options.
 - Optional offline caching through `service-worker.js` when the app is served from a local web server.
 
@@ -72,7 +73,11 @@ To connect a future **local** AI model, replace the contents of `interpretUserIn
 
 ## Voice and language
 
-Choose English, Hindi, Kannada, or Urdu in the top-right language menu. The interface and local guidance change together. Start voice mode with one microphone-button press: the browser recognizes speech, MediBridge follows its local first-aid flow and speaks the next question or instruction, then starts listening again. **Stop** ends the loop. Recognition starts directly from the button press so the browser can request microphone access. If access is blocked, allow the microphone in the site controls beside the address bar and reload. Speech recognition support and network requirements depend on the browser/device; text input remains available. The browser/device provides speech; no AI API is used.
+Choose English, Hindi, Kannada, or Urdu in the top-right language menu. Start Talking is an explicit user action that begins browser speech recognition. It opens the chat view after a transcript is received; the conversation continues in context, and its composer has a microphone control for starting or pausing recognition. The UI only reports listening after the browser fires its recognition `start` event. Pause stops listening and narration until resumed; End Conversation disables automatic restarts and stops narration. Browser speech recognition support varies, may rely on an internet service, and must not be assumed to work offline. Core first-aid matching and prepared guidance run locally; no live AI model or API is configured. Text input remains available.
+
+## Demo and visual guide
+
+Try Demo opens a separate practice page with simulated local responses and no microphone use. The visual guide is also separate from the voice workspace; its animated marker is illustrative only, and the displayed text comes from the local scenario content. The current scenario content has not been certified as medically reviewed, and no verified video assets or AI video generation are included.
 
 ## Good first tests
 

@@ -44,6 +44,7 @@
           <button type="button" id="welcomeStartButton" class="button button-primary welcome-primary"><span aria-hidden="true">🎙</span> Start Talking</button>
           <button type="button" id="welcomeDemoButton" class="button button-secondary welcome-secondary">Try Demo</button>
         </div>
+        <p id="welcomeVoiceStatus" class="welcome-voice-status" role="status" aria-live="polite"></p>
         <p class="welcome-consent">Starting voice mode may ask your browser for microphone access. Voice recognition depends on browser support and may require an internet connection.</p>
         <button type="button" class="welcome-emergency" data-emergency>🆘 Emergency help</button>
       </section>
@@ -67,7 +68,7 @@
             <span id="primaryTalkLabel" data-i18n="talkToMediBridge">Start voice conversation</span>
           </button>
           <button type="button" id="voicePauseButton" class="primary-stop-button" disabled>Ⅱ <span>Pause</span></button>
-          <button type="button" id="primaryStopButton" class="primary-stop-button end-call-button" disabled>■ <span>End Call</span></button>
+          <button type="button" id="primaryStopButton" class="primary-stop-button end-call-button" disabled>■ <span>End Conversation</span></button>
           <span id="voiceStatusIndicator" class="voice-status" role="status" aria-live="polite"></span>
         </div>
         <p id="voiceConnectionNote" class="voice-conversation-hint">Voice recognition availability depends on your browser and connection. Microphone access is requested only when you start voice mode.</p>
@@ -110,6 +111,7 @@
           <div class="composer-footer">
             <p id="inputHint" class="input-hint" data-i18n="inputHint">First-aid guidance only. No diagnosis or medicine advice.</p>
             <div class="composer-actions">
+              <button type="button" id="chatMicButton" class="chat-mic-button" aria-label="Start voice conversation" title="Start voice conversation">🎤</button>
               <button type="submit" class="button button-primary">↑ <span data-i18n="getGuidance">Send</span></button>
               <button type="button" id="emergencyButton" class="button button-emergency">🆘 <span data-i18n="emergencyHelp">Emergency help</span></button>
             </div>

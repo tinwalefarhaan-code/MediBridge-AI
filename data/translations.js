@@ -40,4 +40,6 @@ Object.assign(window.TRANSLATIONS.ur, {
   demoBurn: "کوئی جل گیا ہے۔", whyOffline: "آف لائن کام کرتا ہے", whyMultilingual: "کثیر لسانی", whyVoice: "آواز کی رہنمائی", whyStress: "تناؤ کی صورتحال کے لیے ڈیزائن", whySteps: "مرحلہ وار ابتدائی طبی رہنمائی", whyAccount: "بنیادی رہنمائی کے لیے اکاؤنٹ کی ضرورت نہیں"
 });
 window.TRANSLATIONS.en.voicePermissionDenied = "Microphone access is blocked for this site. Allow microphone access in your browser's site settings, then try again. You can type instead.";
+window.TRANSLATIONS.en.voiceNetworkError = "The browser could not reach its speech-recognition service. Check your connection or type instead.";
+window.TRANSLATIONS.en.voiceMicrophoneUnavailable = "The browser could not access a microphone. Check that one is connected and allowed, or type instead.";
 window.TRANSLATIONS.hi.voicePermissionDenied = "इस साइट के लिए माइक्रोफ़ोन की अनुमति बंद है। ब्राउज़र की साइट सेटिंग में माइक्रोफ़ोन की अनुमति दें और फिर कोशिश करें। आप इसके बजाय लिख सकते हैं।";

@@ -1,5 +1,5 @@
 /* Static cache for the local MediBridge prototype. */
-const CACHE_NAME = "medibridge-v5";
+const CACHE_NAME = "medibridge-v16";
 const APP_FILES = [
   "./",
   "./index.html",
@@ -21,9 +21,17 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   // Cache-first keeps the prepared local safety content available when offline.
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-    const copy = response.clone();
-    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-    return response;
-  }).catch(() => caches.match("./index.html"))));
+  event.respondWith(caches.match(event.request).then((cached) => {
+    if (cached) return cached;
+    return fetch(event.request).then((response) => {
+      if (response.ok && new URL(event.request.url).origin === self.location.origin) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      }
+      return response;
+    }).catch((error) => {
+      if (event.request.mode === "navigate") return caches.match("./index.html");
+      throw error;
+    });
+  }));
 });

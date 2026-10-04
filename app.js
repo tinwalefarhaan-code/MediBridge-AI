@@ -15,9 +15,9 @@
   // Keep country-specific emergency numbers in this one configuration object.
   const EMERGENCY_NUMBERS = { india: "emergencyNumberIndia", us: "emergencyNumberUS", uk: "emergencyNumberUK", other: "otherEmergencyNumber" };
   const MEDICATION_PATTERNS = ["medicine", "medication", "tablet", "pill", "dose", "drug", "दवा", "गोली", "ಔಷಧ", "ಮಾತ್ರೆ", "دوا", "گولی"];
-  const state = { language: localStorage.getItem("medibridge-language") || "en", currentScenario: null, currentQuestion: 0, currentStep: 0, conversationHistory: [], lastResponse: "", recognition: null, recognitionStarted: false, speechStatus: "idle", voiceUnavailableWarned: new Set(), conversationMode: false, voicePaused: false, recognitionStoppedManually: false, thinking: false, responseTimer: null, activeView: "welcome", demoScenario: null, demoStep: 0, demoQuestionAnswered: false, guideScenario: null, guideStep: 0, guideTimer: null };
-  let microphonePermission = "unknown";
+  const state = { language: localStorage.getItem("medibridge-language") || "en", currentScenario: null, currentQuestion: 0, currentStep: 0, activeQuestion: null, conversationHistory: [], lastResponse: "", recognition: null, recognitionStarted: false, speechStatus: "idle", voiceUnavailableWarned: new Set(), conversationMode: false, voicePaused: false, voiceEntryPending: false, pendingClarification: false, thinking: false, responseTimer: null, activeView: "welcome", demoScenario: null, demoStep: 0, guideScenario: null, guideStep: 0, guideTimer: null };
   const offlineRecognitionReady = new Set();
+  const stoppedRecognitions = new WeakSet();
 
   const situationForm = $("#situationForm");
   const situationInput = $("#situationInput");
@@ -66,6 +66,11 @@
       // Do not guess where weak matching leaves multiple plausible situations.
       if (top.score === 1 && closeMatches.length > 1) return { type: "ambiguous", matches: closeMatches.slice(0, 4).map((entry) => entry.scenario) };
       return { type: "scenario", scenario: top.scenario, confidence: top.score, matches: closeMatches.map((entry) => entry.scenario) };
+    }
+
+    if (/\b(bleed|bleeding|blood loss)\b/.test(text) && !/\b(no|not|stopped|without)\b.{0,16}\b(bleed|bleeding|blood)\b/.test(text)) {
+      const scenario = scenarios.find((item) => item.id === "severe_bleeding");
+      if (scenario) return { type: "scenario", scenario, confidence: 1, matches: [scenario] };
     }
 
     // Only fall back to the medication refusal when nothing scenario-like matched.
@@ -136,7 +141,7 @@
     const talkButton = $("#primaryTalkButton");
     const talkLabel = $("#primaryTalkLabel");
     if (talkButton && talkLabel) {
-      ["is-idle", "is-listening", "is-thinking", "is-speaking", "is-ready"].forEach((cls) => talkButton.classList.remove(cls));
+      ["is-idle", "is-starting", "is-listening", "is-thinking", "is-speaking", "is-ready", "is-paused"].forEach((cls) => talkButton.classList.remove(cls));
       talkButton.classList.add(`is-${phase}`);
       talkButton.setAttribute("aria-pressed", phase === "idle" ? "false" : "true");
       const micIcon = talkButton.querySelector(".mic-icon");
@@ -151,6 +156,23 @@
 
     const primaryStop = $("#primaryStopButton");
     if (primaryStop) primaryStop.disabled = phase === "idle";
+    const welcomeStatus = $("#welcomeVoiceStatus");
+    if (welcomeStatus && state.activeView === "welcome") {
+      welcomeStatus.textContent = phase === "listening" ? "Listening… speak naturally."
+        : phase === "starting" ? "Waiting for microphone permission…"
+        : phase === "thinking" ? t("thinking")
+        : phase === "speaking" ? t("mediBridgeSpeaking")
+        : phase === "paused" ? "Voice paused"
+        : "";
+    } else if (welcomeStatus) welcomeStatus.textContent = "";
+    const chatMic = $("#chatMicButton");
+    if (chatMic) {
+      chatMic.textContent = phase === "listening" ? "🔴" : "🎤";
+      chatMic.setAttribute("aria-label", state.voicePaused ? "Resume voice conversation" : state.conversationMode || state.recognition ? "Pause voice conversation" : "Start voice conversation");
+      chatMic.title = chatMic.getAttribute("aria-label");
+      chatMic.classList.toggle("is-listening", phase === "listening");
+      chatMic.setAttribute("aria-pressed", phase === "listening" ? "true" : "false");
+    }
     const pauseButton = $("#voicePauseButton");
     if (pauseButton) {
       pauseButton.disabled = phase === "idle";
@@ -178,31 +200,16 @@
     conversation.innerHTML = "";
     state.conversationHistory = [];
     state.lastResponse = "";
+    state.activeQuestion = null;
+    state.pendingClarification = false;
     state.thinking = false;
     if (state.responseTimer) window.clearTimeout(state.responseTimer);
     state.responseTimer = null;
-    state.recognitionStoppedManually = false;
     updateVoiceControls();
-  }
-
-  function showQuickChoices(message, scenarioIds) {
-    const card = createCard("choice-card", `<h3>${safeText(t("chooseSituation"))}</h3><p>${safeText(message)}</p><div class="choice-options"></div>`);
-    const options = card.querySelector(".choice-options");
-    scenarioIds.forEach((id) => {
-      const scenario = typeof id === "string" ? scenarios.find((item) => item.id === id) : id;
-      if (!scenario) return;
-      const button = document.createElement("button");
-      button.className = "choice-button";
-      button.type = "button";
-      button.textContent = `${scenario.icon} ${localize(scenario.name)}`;
-      button.addEventListener("click", () => startScenario(scenario, { showSelection: true }));
-      options.append(button);
-    });
   }
 
   function showUnknown() {
     respond(`${t("noScenario")} ${t("clarification")}`);
-    showQuickChoices(t("chooseSituation"), ["severe_bleeding", "unconscious", "choking", "not_breathing_normally", "burn"]);
   }
 
   function urgencyLabel(urgency) {
@@ -220,62 +227,65 @@
     conversation.lastElementChild.querySelector(".emergency-now").addEventListener("click", openEmergency);
   }
 
-  function startScenario(scenario, { showSelection = false, viaVoice = false } = {}) {
+  function startScenario(scenario, { showSelection = false, initialReply = "", viaVoice = false } = {}) {
     stopSpeech();
     state.currentScenario = scenario;
     state.currentQuestion = 0;
+    state.activeQuestion = null;
     state.currentStep = 0;
     if (showSelection) addMessage("user", `${scenario.icon} ${localize(scenario.name)}`);
     respond(t("importantFirst"), localize(scenario.name));
     const isUrgent = ["critical", "red"].includes(scenario.urgency);
     if (isUrgent) showUrgency(scenario);
-    // A voice conversation has no way to click a Yes/No answer, so a voice-
-    // detected scenario skips straight to spoken step-by-step guidance.
-    // The typed/quick-action/click path is untouched and still asks the
-    // clarifying question first, exactly as before.
-    if (scenario.questions.length) showQuestion();
-    else showStep();
+    const firstQuestion = scenario.questions[0];
+    const initialAnswer = firstQuestion && initialReply ? interpretAnswer(initialReply, firstQuestion, scenario) : null;
+    if (initialAnswer) {
+      state.currentQuestion = 1;
+      if (scenario.id === "choking" && initialAnswer === "no") state.currentStep = 1;
+    }
+    const hasNaturalFollowUp = scenario.questions.length > 0 && !initialAnswer;
+    showStep({ speak: !hasNaturalFollowUp });
+    if (hasNaturalFollowUp) {
+      showQuestion();
+      setSpeakable(`${localize(scenario.steps[0])} ${localize(firstQuestion.text)}`);
+    }
   }
 
   function showQuestion() {
     const scenario = state.currentScenario;
     const question = scenario.questions[state.currentQuestion];
     if (!question) { showStep(); return; }
-    const questionText = localize(question.text);
-    setSpeakable(questionText);
-    const card = createCard("question-card", `<h3>${safeText(t("question"))}</h3><p>${safeText(questionText)}</p><div class="question-options"></div>`);
-    const options = card.querySelector(".question-options");
-    question.options.forEach((option) => {
-      const button = document.createElement("button");
-      button.className = "answer-button" + (question.emergencyOn.includes(option.value) ? " danger-answer" : "");
-      button.type = "button";
-      button.textContent = localize(option.label);
-      button.addEventListener("click", () => answerQuestion(question, option));
-      options.append(button);
-    });
+    state.activeQuestion = question;
+    addMessage("assistant", localize(question.text));
   }
 
   function answerQuestion(question, option, userText = "") {
     addMessage("user", userText || localize(option.label));
     if (question.emergencyOn.includes(option.value)) showUrgency(state.currentScenario, true);
     state.currentQuestion += 1;
+    state.activeQuestion = null;
     if (state.currentScenario.id === "choking" && option.value === "no") {
       state.currentStep = 1;
       showStep();
       return;
     }
-    showQuestion();
+    if (state.currentScenario.questions[state.currentQuestion]) showQuestion();
+    else if (state.currentScenario.id === "choking" && option.value === "yes") {
+      state.currentStep = 0;
+      showStep();
+    } else showStep();
   }
 
-  function showStep() {
+  function showStep({ speak = true } = {}) {
     const scenario = state.currentScenario;
     const step = scenario.steps[state.currentStep];
     if (!step) { finishScenario(); return; }
     conversation.querySelectorAll(".step-card.current-step").forEach((card) => card.remove());
     const stepText = localize(step);
-    setSpeakable(stepText);
+    respond(stepText);
+    if (speak) setSpeakable(stepText);
     const dots = scenario.steps.map((_, index) => `<span class="${index <= state.currentStep ? "active" : ""}" aria-hidden="true"></span>`).join("");
-    const card = createCard("step-card current-step", `<div class="progress">${dots}</div><div class="step-number">${safeText(interpolate(t("stepOf"), { current: state.currentStep + 1, total: scenario.steps.length }))}</div><p class="step-copy">${safeText(stepText)}</p><div class="step-actions"><button type="button" class="button button-secondary previous-step" ${state.currentStep === 0 ? "disabled" : ""}>← ${safeText(t("previous"))}</button><button type="button" class="button button-secondary repeat-step">↻ ${safeText(t("repeatStep"))}</button><button type="button" class="button button-primary next-step">${safeText(t("next"))} →</button><button type="button" class="button button-help need-help">🆘 ${safeText(t("needHelp"))}</button></div>`);
+    const card = createCard("step-card current-step", `<div class="progress">${dots}</div><div class="step-number">${safeText(interpolate(t("stepOf"), { current: state.currentStep + 1, total: scenario.steps.length }))}</div><div class="step-actions"><button type="button" class="button button-secondary previous-step" ${state.currentStep === 0 ? "disabled" : ""}>← ${safeText(t("previous"))}</button><button type="button" class="button button-secondary repeat-step">↻ ${safeText(t("repeatStep"))}</button><button type="button" class="button button-primary next-step">${safeText(t("next"))} →</button><button type="button" class="button button-help need-help">🆘 ${safeText(t("needHelp"))}</button></div>`);
     card.querySelector(".previous-step").addEventListener("click", () => {
       if (state.currentStep === 0) return;
       state.currentStep -= 1;
@@ -299,15 +309,30 @@
     avoid.querySelector(".emergency-now").addEventListener("click", openEmergency);
   }
 
-  function interpretAnswer(text, question) {
+  function interpretAnswer(text, question, scenario) {
     const normalized = normalizeText(text);
     if (!normalized) return null;
+    if (scenario.id === "choking") {
+      if (/\b(can t|cant|cannot|unable|struggl\w*|not|no)\b.{0,24}\b(cough|speak|breathe|breathing|air)\b|\b(not breathing|silent|turning blue|unresponsive)\b/.test(normalized)) return "no";
+      if (/\b(can|able to|is|are)\b.{0,24}\b(cough|speak|breathe|breathing)\b|\bcoughing effectively\b|\bthey can\b/.test(normalized)) return "yes";
+    }
+    if (scenario.id === "severe_bleeding" || scenario.id === "minor_bleeding") {
+      if (/\b(still bleeding|wont stop|won t stop|not stopping|spurting|heavy bleeding|bleeding heavily)\b/.test(normalized)) return "yes";
+      if (/\b(bleeding stopped|has stopped|stopped bleeding|no more blood)\b/.test(normalized)) return "no";
+    }
+    if (scenario.id === "unconscious" || scenario.id === "fainting") {
+      if (/\b(not responding|unresponsive|unconscious|not awake|won t wake|wont wake)\b/.test(normalized)) return "no";
+      if (/\b(responding|awake|woke up|conscious|speaking)\b/.test(normalized)) return "yes";
+    }
+    if (scenario.id === "burn" && /\b(not breathing|unconscious|unresponsive|struggling to breathe)\b/.test(normalized)) return "no";
     if (/\b(not sure|unsure|dont know|do not know|maybe|uncertain)\b/.test(normalized)) return "not_sure";
-    if (/\b(no|nope|not|can t|cant|cannot|unable|unconscious|unresponsive|not breathing|not awake|still bleeding|wont stop)\b/.test(normalized)) return "no";
-    if (/\b(yes|yeah|yep|can|able|awake|responding|breathing normally|stopped|small|minor)\b/.test(normalized)) return "yes";
+    if (/^(no|nope|not really|cannot|cant|can t)$/.test(normalized)) return "no";
+    if (/^(yes|yeah|yep|correct|that is right)$/.test(normalized)) return "yes";
 
     const negativeEvidence = ["no", "not_sure"].some((value) => question.emergencyOn.includes(value));
     if (negativeEvidence && /\b(severe|heavy|spurting|large|deep|electrical|chemical|trouble breathing|serious)\b/.test(normalized)) return "yes";
+    if (negativeEvidence && /\b(normal|stopped|awake|responding|breathing normally|small|minor|mild)\b/.test(normalized)) return "yes";
+    if (!negativeEvidence && /\b(no|not|cannot|unable|unresponsive|unconscious|trouble breathing|not breathing)\b/.test(normalized)) return "no";
     return null;
   }
 
@@ -315,9 +340,9 @@
     const scenario = state.currentScenario;
     if (!scenario) return false;
     const normalized = normalizeText(text);
-    const question = scenario.questions[state.currentQuestion];
+    const question = state.activeQuestion;
     if (question) {
-      const value = interpretAnswer(text, question);
+      const value = interpretAnswer(text, question, scenario);
       if (!value) return false;
       const option = question.options.find((item) => item.value === value);
       if (!option) return false;
@@ -354,14 +379,33 @@
   function handleSituation(text, { viaVoice = false } = {}) {
     const value = (text || "").trim();
     if (!value) { situationInput.focus(); return; }
-    if (handleActiveReply(value, viaVoice)) return;
-    clearConversation();
-    addMessage("user", value);
+    if (viaVoice && state.voiceEntryPending) {
+      state.voiceEntryPending = false;
+      showView("assistant");
+      clearConversation();
+    }
     const result = interpretUserInput(value);
-    if (result.type === "medication") { respond(t("medication")); showQuickChoices(t("clarification"), ["unconscious", "severe_bleeding", "choking", "burn"]); return; }
-    if (result.type === "unknown") { showUnknown(); return; }
-    if (result.type === "ambiguous") { respond(t("possibleMatches")); showQuickChoices(t("possibleMatches"), result.matches); return; }
-    startScenario(result.scenario, { viaVoice });
+    if (state.currentScenario) {
+      if (result.type === "scenario" && result.scenario.id !== state.currentScenario.id) {
+        addMessage("user", value);
+        startScenario(result.scenario, { initialReply: value, viaVoice });
+        return;
+      }
+      if (handleActiveReply(value, viaVoice)) return;
+      addMessage("user", value);
+      const followUp = state.activeQuestion
+        ? `I’m following the current situation. ${localize(state.activeQuestion.text)}`
+        : "I’m following the current situation. Could you tell me a little more about what is happening now?";
+      respond(followUp);
+      return;
+    }
+    if (!state.pendingClarification && !viaVoice) clearConversation();
+    addMessage("user", value);
+    if (result.type === "medication") { state.pendingClarification = false; respond(t("medication")); return; }
+    if (result.type === "unknown") { state.pendingClarification = true; showUnknown(); return; }
+    if (result.type === "ambiguous") { state.pendingClarification = true; respond("I’m not sure which situation you mean. What is the main problem right now?"); return; }
+    state.pendingClarification = false;
+    startScenario(result.scenario, { initialReply: value, viaVoice });
   }
 
   function resetFlow() {
@@ -369,6 +413,8 @@
     state.currentScenario = null;
     state.currentQuestion = 0;
     state.currentStep = 0;
+    state.activeQuestion = null;
+    state.pendingClarification = false;
     clearConversation();
     respond(t("welcome"));
     situationInput.value = "";
@@ -408,7 +454,7 @@
 
   function showView(view, updateHash = true) {
     const next = ["welcome", "assistant", "demo", "guide"].includes(view) ? view : "welcome";
-    if (state.activeView === "assistant" && next !== "assistant") stopConversation();
+    if (next !== "assistant" && state.conversationMode) stopConversation();
     state.activeView = next;
     $("#welcomeScreen").hidden = next !== "welcome";
     $("#mainExperience").hidden = next !== "assistant";
@@ -416,6 +462,7 @@
     $("#visualGuidePage").hidden = next !== "guide";
     if (next !== "guide") stopGuidePlayback();
     if (updateHash && location.hash !== `#${next}`) history.pushState(null, "", `#${next}`);
+    updateVoiceControls();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -429,7 +476,6 @@
   function beginDemo(scenario) {
     state.demoScenario = scenario;
     state.demoStep = 0;
-    state.demoQuestionAnswered = false;
     const output = $("#demoConversation");
     output.replaceChildren();
     $("#resetDemoButton").disabled = false;
@@ -453,7 +499,6 @@
       button.textContent = localize(option.label);
       button.addEventListener("click", () => {
         appendDemoMessage("user", localize(option.label));
-        state.demoQuestionAnswered = true;
         if (state.demoScenario.id === "choking" && option.value === "no") state.demoStep = 1;
         else state.demoStep = 0;
         showDemoStep();
@@ -488,7 +533,6 @@
   function resetDemo() {
     state.demoScenario = null;
     state.demoStep = 0;
-    state.demoQuestionAnswered = false;
     $("#demoConversation").innerHTML = '<p class="demo-placeholder">Choose an example to begin.</p>';
     $("#demoControls").replaceChildren();
     $("#resetDemoButton").disabled = true;
@@ -595,7 +639,11 @@
   }
 
   function updateConnectionStatus() {
-    connectionStatus.textContent = navigator.onLine ? "Online · core guidance available offline" : t("offlineMode");
+    const connectionLabel = navigator.onLine ? "Online" : "Offline";
+    const connectionDetail = navigator.onLine ? "Core first-aid content is available locally. Browser speech may still need an internet connection." : "Offline. Core first-aid content remains available locally; speech recognition may not work.";
+    connectionStatus.textContent = connectionLabel;
+    connectionStatus.setAttribute("aria-label", `${connectionLabel}. ${connectionDetail}`);
+    connectionStatus.title = connectionDetail;
     connectionStatus.classList.toggle("offline", !navigator.onLine);
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     $("#voiceConnectionNote").textContent = !Recognition
@@ -667,6 +715,7 @@
         state.voiceUnavailableWarned.add(state.language);
         addMessage("assistant", t("voiceOutputUnavailable"));
       }
+      maybeContinueConversation();
       return;
     }
     if (window.speechSynthesis.speaking || window.speechSynthesis.paused) window.speechSynthesis.cancel();
@@ -709,20 +758,38 @@
   function stopConversation() {
     state.conversationMode = false;
     state.voicePaused = false;
+    state.voiceEntryPending = false;
     state.thinking = false;
     if (state.responseTimer) window.clearTimeout(state.responseTimer);
     state.responseTimer = null;
     if (state.recognition) {
-      state.recognitionStoppedManually = true;
+      const recognition = state.recognition;
+      state.recognition = null;
+      state.recognitionStarted = false;
+      stoppedRecognitions.add(recognition);
       try {
-        state.recognition.stop();
+        recognition.stop();
       } catch (error) {
-        state.recognition = null;
-        state.recognitionStarted = false;
+        stoppedRecognitions.delete(recognition);
         console.warn("Could not stop speech recognition cleanly.", error);
       }
     }
     stopSpeech();
+    updateVoiceControls();
+  }
+
+  function stopListeningForReply() {
+    if (!state.recognition) return;
+    const recognition = state.recognition;
+    state.recognition = null;
+    state.recognitionStarted = false;
+    stoppedRecognitions.add(recognition);
+    try {
+      recognition.stop();
+    } catch (error) {
+      stoppedRecognitions.delete(recognition);
+      console.warn("Could not pause speech recognition for a typed reply.", error);
+    }
     updateVoiceControls();
   }
 
@@ -739,6 +806,8 @@
     if (!Recognition) {
       state.conversationMode = false;
       state.voicePaused = false;
+      state.voiceEntryPending = false;
+      showView("assistant");
       respond(t("voiceUnsupported"));
       return;
     }
@@ -753,16 +822,11 @@
     if (!navigator.onLine && !useOnDevice) {
       state.conversationMode = false;
       state.voicePaused = false;
+      state.voiceEntryPending = false;
+      showView("assistant");
       respond(t("voiceOfflineUnavailable"));
       return;
     }
-    if (microphonePermission === "denied") {
-      state.conversationMode = false;
-      state.voicePaused = false;
-      respond(t("voicePermissionDenied"));
-      return;
-    }
-
     state.conversationMode = true;
     state.voicePaused = false;
 
@@ -777,6 +841,8 @@
       recognition = new Recognition();
     } catch (error) {
       state.conversationMode = false;
+      state.voiceEntryPending = false;
+      showView("assistant");
       console.warn("Could not create speech recognition.", error);
       respond(t("voiceError"));
       return;
@@ -810,6 +876,7 @@
         }
         state.thinking = false;
         handleSituation(transcript, { viaVoice: true });
+        if (situationInput.value === transcript) situationInput.value = "";
         if ($("#voiceGuidanceToggle").checked && state.speechStatus !== "speaking" && state.lastResponse) {
           speakResponse();
         }
@@ -818,30 +885,41 @@
       }, 450);
     };
     recognition.onerror = (event) => {
+      if (stoppedRecognitions.has(recognition)) return;
       if (gotResult) return; // a valid result already came through; onend will continue the loop
-      if (state.recognitionStoppedManually) { state.recognitionStoppedManually = false; return; }
       recognitionError = event && event.error || "";
       if (recognitionError === "no-speech") return;
       // A real failure (no speech heard, mic denied, timed out, offline with
       // no cloud reachable, etc.) ends the loop gracefully rather than
       // retrying forever - tapping Talk again starts a fresh attempt.
       state.conversationMode = false;
-      const offlineFailure = event && event.error === "network" && !navigator.onLine;
+      const networkFailure = recognitionError === "network";
+      const captureFailure = recognitionError === "audio-capture";
       const permissionFailure = recognitionError === "not-allowed" || recognitionError === "service-not-allowed";
-      if (permissionFailure) microphonePermission = "denied";
       state.recognitionStarted = false;
-      respond(offlineFailure ? t("voiceOfflineUnavailable") : permissionFailure ? t("voicePermissionDenied") : t("voiceError"));
+      if (state.voiceEntryPending) {
+        state.voiceEntryPending = false;
+        showView("assistant");
+      }
+      const message = networkFailure ? t("voiceNetworkError")
+        : captureFailure ? t("voiceMicrophoneUnavailable")
+        : permissionFailure ? t("voicePermissionDenied")
+        : t("voiceError");
+      respond(message);
     };
     recognition.onstart = () => {
       if (state.recognition !== recognition) return;
       state.recognitionStarted = true;
-      microphonePermission = "granted";
       updateVoiceControls();
     };
     recognition.onend = () => {
-      if (state.recognition === recognition) state.recognition = null;
+      if (stoppedRecognitions.has(recognition)) {
+        stoppedRecognitions.delete(recognition);
+        return;
+      }
+      if (state.recognition !== recognition) return;
+      state.recognition = null;
       state.recognitionStarted = false;
-      state.recognitionStoppedManually = false;
       updateVoiceControls();
       if (gotResult) maybeContinueConversation();
       else if (state.conversationMode && recognitionError === "no-speech") {
@@ -856,54 +934,45 @@
       state.recognition = null;
       state.recognitionStarted = false;
       state.conversationMode = false;
+      state.voiceEntryPending = false;
+      showView("assistant");
       updateVoiceControls();
       console.warn("Could not start speech recognition.", error);
-      respond(microphonePermission === "denied" ? t("voicePermissionDenied") : t("voiceError"));
+      const message = ["NotAllowedError", "SecurityError"].includes(error.name) ? t("voicePermissionDenied")
+        : ["NotFoundError", "DevicesNotFoundError"].includes(error.name) ? t("voiceMicrophoneUnavailable")
+        : error.name === "NetworkError" ? t("voiceNetworkError")
+        : t("voiceError");
+      respond(message);
     }
 
-    function pauseConversation() {
-      state.conversationMode = false;
-      state.voicePaused = true;
-      state.thinking = false;
-      if (state.responseTimer) window.clearTimeout(state.responseTimer);
-      state.responseTimer = null;
-      if (state.recognition) {
-        state.recognitionStoppedManually = true;
-        try {
-          state.recognition.stop();
-        } catch (error) {
-          state.recognition = null;
-          state.recognitionStarted = false;
-          state.recognitionStoppedManually = false;
-          console.warn("Could not pause speech recognition cleanly.", error);
-        }
-      }
-      stopSpeech();
-      updateVoiceControls();
-    }
-
-    function resumeConversation() {
-      if (!state.voicePaused) return;
-      state.voicePaused = false;
-      startVoiceRecognition();
-    }
   }
 
-  function monitorMicrophonePermission() {
-    if (!navigator.permissions || typeof navigator.permissions.query !== "function") return;
-    let permissionRequest;
-    try {
-      permissionRequest = navigator.permissions.query({ name: "microphone" });
-    } catch (error) {
-      console.info("Microphone permission status is unavailable; speech recognition will report access errors.", error);
-      return;
+  function pauseConversation() {
+    state.conversationMode = false;
+    state.voicePaused = true;
+    state.thinking = false;
+    if (state.responseTimer) window.clearTimeout(state.responseTimer);
+    state.responseTimer = null;
+    if (state.recognition) {
+      const recognition = state.recognition;
+      state.recognition = null;
+      state.recognitionStarted = false;
+      stoppedRecognitions.add(recognition);
+      try {
+        recognition.stop();
+      } catch (error) {
+        stoppedRecognitions.delete(recognition);
+        console.warn("Could not pause speech recognition cleanly.", error);
+      }
     }
-    permissionRequest.then((permission) => {
-      microphonePermission = permission.state;
-      permission.addEventListener("change", () => { microphonePermission = permission.state; });
-    }).catch((error) => {
-      console.info("Microphone permission status is unavailable; speech recognition will report access errors.", error);
-    });
+    stopSpeech();
+    updateVoiceControls();
+  }
+
+  function resumeConversation() {
+    if (!state.voicePaused) return;
+    state.voicePaused = false;
+    startVoiceRecognition();
   }
 
   function prepareOfflineVoice() {
@@ -941,15 +1010,29 @@
 
   function registerServiceWorker() {
     if ("serviceWorker" in navigator && location.protocol !== "file:") {
-      navigator.serviceWorker.register("service-worker.js").catch(() => { /* App stays usable without cache registration. */ });
+      navigator.serviceWorker.register("service-worker.js").catch((error) => {
+        console.warn("Offline app caching could not be registered. Core guidance remains available while this page is open.", error);
+      });
     }
   }
 
   function bindEvents() {
-    situationForm.addEventListener("submit", (event) => { event.preventDefault(); handleSituation(situationInput.value); });
+    situationForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const message = situationInput.value;
+      const keepVoiceActive = state.conversationMode;
+      if (keepVoiceActive) stopListeningForReply();
+      handleSituation(message);
+      if (message.trim()) situationInput.value = "";
+      if (keepVoiceActive && state.speechStatus !== "speaking") maybeContinueConversation();
+    });
     $("#welcomeStartButton").addEventListener("click", () => {
-      showView("assistant");
-      startVoiceRecognition();
+      if (state.voicePaused) resumeConversation();
+      else if (state.conversationMode || state.recognition) pauseConversation();
+      else {
+        state.voiceEntryPending = true;
+        startVoiceRecognition();
+      }
     });
     $("#welcomeDemoButton").addEventListener("click", () => showView("demo"));
     $("#primaryTalkButton").addEventListener("click", () => {
@@ -962,6 +1045,11 @@
       else pauseConversation();
     });
     $("#primaryStopButton").addEventListener("click", stopConversation);
+    $("#chatMicButton").addEventListener("click", () => {
+      if (state.voicePaused) resumeConversation();
+      else if (state.conversationMode || state.recognition) pauseConversation();
+      else startVoiceRecognition();
+    });
     $("#speakResponseButton").addEventListener("click", () => speakResponse());
     $("#repeatSpeechButton").addEventListener("click", () => speakResponse());
     $("#readAloudButton").addEventListener("click", () => speakResponse());
@@ -995,6 +1083,7 @@
     window.addEventListener("online", updateConnectionStatus);
     window.addEventListener("offline", updateConnectionStatus);
     window.addEventListener("hashchange", () => showView(location.hash.slice(1), false));
+    window.addEventListener("popstate", () => showView(location.hash.slice(1), false));
   }
 
   function init() {
@@ -1004,7 +1093,6 @@
     translateUI();
     updateVoiceControls();
     showView(location.hash.slice(1) || "welcome", false);
-    monitorMicrophonePermission();
     registerServiceWorker();
     prepareOfflineVoice();
   }
