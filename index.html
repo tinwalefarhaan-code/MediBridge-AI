@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b6e69" />
+    <meta name="description" content="Offline-first, structured first-aid guidance from MediBridge AI." />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="icons/icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="MediBridge" />
+    <title>MediBridge AI | First-Aid Guide</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#assistant">Skip to conversation</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="MediBridge AI home">
+        <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>MediBridge <em>AI</em></strong><small data-i18n="tagline">First-aid guide</small></span>
+      </a>
+      <div class="header-actions">
+        <span class="offline-status" id="connectionStatus" role="status">Checking connection</span>
+        <label class="sr-only" for="languageSelect" data-i18n="language">Language</label>
+        <select id="languageSelect" class="language-select" aria-label="Choose language">
+          <option value="en">English</option>
+          <option value="hi">हिन्दी</option>
+          <option value="kn">ಕನ್ನಡ</option>
+          <option value="ur">اردو</option>
+        </select>
+        <button type="button" class="header-emergency" data-emergency aria-label="Open emergency help">🆘 <span data-i18n="emergency">Emergency</span></button>
+        <button id="settingsButton" class="icon-button" type="button" aria-label="Accessibility settings" title="Accessibility settings">⚙</button>
+      </div>
+    </header>
+
+    <main id="top" class="app-shell">
+      <section id="welcomeScreen" class="welcome-screen" aria-labelledby="welcomeTitle">
+        <div class="welcome-mark" aria-hidden="true"><span class="logo"><i></i><i></i><i></i></span></div>
+        <p class="eyebrow">MEDIBRIDGE AI</p>
+        <h1 id="welcomeTitle">Your voice-first first-aid companion</h1>
+        <p class="hero-copy">Calm, step-by-step first-aid guidance when you need a clear next step. Prepared locally on this device; not a replacement for emergency care.</p>
+        <div class="welcome-actions">
+          <button type="button" id="welcomeStartButton" class="button button-primary welcome-primary"><span aria-hidden="true">🎙</span> Start Talking</button>
+          <button type="button" id="welcomeDemoButton" class="button button-secondary welcome-secondary">Try Demo</button>
+        </div>
+        <p class="welcome-consent">Starting voice mode may ask your browser for microphone access. Voice recognition depends on browser support and may require an internet connection.</p>
+        <button type="button" class="welcome-emergency" data-emergency>🆘 Emergency help</button>
+      </section>
+
+      <section id="mainExperience" hidden>
+      <section class="safety-banner" aria-label="Emergency notice">
+        <span class="safety-mark" aria-hidden="true">!</span>
+        <p><strong>If someone is unresponsive or not breathing normally, call local emergency services now.</strong> Do not delay professional help to use this guide.</p>
+        <button type="button" class="banner-emergency" data-emergency>Emergency help</button>
+      </section>
+
+      <section class="voice-strip" aria-labelledby="voiceTitle">
+        <div class="voice-intro">
+          <p class="eyebrow" data-i18n="voiceConversationLabel">VOICE CONVERSATION</p>
+          <h1 id="voiceTitle">How can I help?</h1>
+          <p>Speak naturally. Your replies stay connected to the current first-aid flow.</p>
+        </div>
+        <div class="voice-conversation-controls">
+          <button type="button" id="primaryTalkButton" class="primary-talk-button is-idle" aria-pressed="false">
+            <span class="mic-icon" aria-hidden="true">🎤</span>
+            <span id="primaryTalkLabel" data-i18n="talkToMediBridge">Start voice conversation</span>
+          </button>
+          <button type="button" id="voicePauseButton" class="primary-stop-button" disabled>Ⅱ <span>Pause</span></button>
+          <button type="button" id="primaryStopButton" class="primary-stop-button end-call-button" disabled>■ <span>End Call</span></button>
+          <span id="voiceStatusIndicator" class="voice-status" role="status" aria-live="polite"></span>
+        </div>
+        <p id="voiceConnectionNote" class="voice-conversation-hint">Voice recognition availability depends on your browser and connection. Microphone access is requested only when you start voice mode.</p>
+      </section>
+
+      <section class="chat-panel" id="assistant" aria-labelledby="guidanceTitle">
+        <div class="chat-heading">
+          <div class="assistant-identity">
+            <span class="assistant-avatar" aria-hidden="true">✚</span>
+            <div><p class="eyebrow" data-i18n="assistantLabel">YOUR FIRST-AID GUIDE</p><h2 id="guidanceTitle">MediBridge</h2></div>
+          </div>
+          <button type="button" id="clearConversationButton" class="text-button">↻ <span data-i18n="startOver">New conversation</span></button>
+        </div>
+        <div id="conversation" class="conversation" aria-live="polite" aria-relevant="additions text">
+          <article class="message assistant-message welcome-message">
+            <span class="message-icon" aria-hidden="true">✚</span>
+            <div><p data-i18n="welcome">Tell me what happened. I will use local first-aid guidance to help you take the next safe step.</p></div>
+          </article>
+        </div>
+        <div class="chat-tools" aria-label="Speech controls">
+          <span id="voiceModeNote">Voice recognition availability depends on your browser and connection.</span>
+          <div>
+            <button id="speakResponseButton" class="text-button" type="button" disabled>🔊 <span data-i18n="speak">Speak</span></button>
+            <button id="repeatSpeechButton" class="text-button" type="button" disabled>↻ <span data-i18n="repeatStep">Repeat</span></button>
+            <button id="pauseSpeechButton" class="text-button" type="button" disabled>⏸ <span data-i18n="pause">Pause</span></button>
+            <button id="resumeSpeechButton" class="text-button" type="button" disabled>▶ <span data-i18n="resume">Resume</span></button>
+            <button id="stopSpeechButton" class="text-button" type="button" disabled>■ <span data-i18n="stop">Stop</span></button>
+          </div>
+        </div>
+        <button id="readAloudButton" class="sr-only" type="button" disabled>Read instructions aloud</button>
+
+        <section class="quick-start" aria-label="Common situations">
+          <p class="eyebrow">START WITH A SITUATION</p>
+          <div id="quickActionGrid" class="quick-action-grid"></div>
+        </section>
+
+        <form id="situationForm" class="situation-form">
+          <label class="sr-only" for="situationInput" data-i18n="tellUs">Tell us what happened</label>
+          <textarea id="situationInput" rows="2" data-i18n-placeholder="inputPlaceholder" placeholder="Describe what happened…" aria-describedby="inputHint"></textarea>
+          <div class="composer-footer">
+            <p id="inputHint" class="input-hint" data-i18n="inputHint">First-aid guidance only. No diagnosis or medicine advice.</p>
+            <div class="composer-actions">
+              <button type="submit" class="button button-primary">↑ <span data-i18n="getGuidance">Send</span></button>
+              <button type="button" id="emergencyButton" class="button button-emergency">🆘 <span data-i18n="emergencyHelp">Emergency help</span></button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="utility-grid" aria-label="Quick options">
+        <article class="info-card">
+          <div class="card-icon" aria-hidden="true">▤</div>
+          <h2>Visual First-Aid Guide</h2>
+          <p>Follow concise, illustrative steps alongside the conversation. Visuals supplement, not replace, emergency care.</p>
+          <button type="button" class="button button-secondary" id="openVisualGuideButton">Open visual guide</button>
+        </article>
+        <article class="info-card">
+          <div class="card-icon" aria-hidden="true">◉</div>
+          <h2>Demo Mode</h2>
+          <p>Try predefined sample scenarios without granting microphone access.</p>
+          <button type="button" class="button button-secondary" id="mainDemoButton">Open demo</button>
+        </article>
+      </section>
+
+      <section class="content-section" aria-labelledby="scenarioTitle">
+        <p class="eyebrow">MORE SITUATIONS</p>
+        <h2 id="scenarioTitle">Other scenarios</h2>
+        <div class="scenario-grid" id="scenarioGrid"></div>
+      </section>
+      </section>
+
+      <section id="demoPage" class="app-page" aria-labelledby="demoPageTitle" hidden>
+        <div class="page-toolbar"><button type="button" class="text-button" data-go-home>← MediBridge home</button><span class="demo-mode-badge">DEMO MODE</span></div>
+        <header class="page-heading"><p class="eyebrow">PRACTICE WITHOUT A MICROPHONE</p><h1 id="demoPageTitle">Explore a sample conversation</h1><p class="hero-copy">These are simulated responses from the on-device prototype, not live AI and not a substitute for professional care.</p></header>
+        <div class="demo-layout">
+          <section class="demo-scenario-picker" aria-labelledby="demoScenarioTitle"><h2 id="demoScenarioTitle">Choose a scenario</h2><div id="demoScenarioList" class="demo-scenario-list"></div></section>
+          <section class="demo-conversation-panel" aria-label="Simulated demo conversation">
+            <div id="demoConversation" class="demo-conversation" aria-live="polite"><p class="demo-placeholder">Choose an example to begin.</p></div>
+            <div id="demoControls" class="demo-controls"></div>
+            <button type="button" id="resetDemoButton" class="button button-secondary" disabled>↺ Start over</button>
+          </section>
+        </div>
+      </section>
+
+      <section id="visualGuidePage" class="app-page" aria-labelledby="visualGuideTitle" hidden>
+        <div class="page-toolbar"><button type="button" class="text-button" id="returnFromGuideButton">← Return to conversation</button><span class="guide-label">ILLUSTRATIVE GUIDE</span></div>
+        <header class="page-heading"><p class="eyebrow">VISUAL FIRST-AID GUIDE</p><h1 id="visualGuideTitle">A clear step at a time</h1><p class="hero-copy">Simple animated illustrations and captions use the prepared local guidance. They do not show a medical procedure or replace emergency services.</p></header>
+        <div class="guide-layout">
+          <section class="guide-picker"><label for="guideScenarioSelect">Choose a topic</label><select id="guideScenarioSelect"></select></section>
+          <section class="guide-viewer" aria-label="Illustrative first-aid steps">
+            <div class="guide-illustration" id="guideIllustration" aria-hidden="true"><span>✚</span></div>
+            <p class="guide-step-count" id="guideStepCount" aria-live="polite"></p>
+            <p class="guide-caption" id="guideCaption"></p>
+            <div class="guide-progress" id="guideProgress" aria-hidden="true"></div>
+            <div class="guide-controls"><button type="button" class="button button-primary" id="guidePlayButton">▶ Play steps</button><button type="button" class="button button-secondary" id="guidePreviousButton">← Previous</button><button type="button" class="button button-secondary" id="guideNextButton">Next →</button></div>
+            <p class="guide-warning">This illustrative guide supplements, but does not replace, professional emergency care. Call local emergency services for a life-threatening emergency. Prototype content requires clinical review.</p>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p data-i18n="disclaimer">MediBridge is a first-aid guide, not a diagnosis or a substitute for professional medical care. Contact local emergency services or a qualified healthcare professional in an emergency.</p>
+      <p>© <span id="year"></span> MediBridge AI · <span data-i18n="offlineFooter">Prepared guidance is stored on this device.</span></p>
+    </footer>
+
+    <dialog id="emergencyDialog" class="modal" aria-labelledby="emergencyDialogTitle">
+      <div class="modal-top"><span class="urgency critical">🆘 <span data-i18n="emergency">EMERGENCY</span></span><button type="button" class="icon-button close-modal" aria-label="Close">×</button></div>
+      <h2 id="emergencyDialogTitle" data-i18n="emergencyScreenTitle">Call your local emergency service</h2>
+      <p data-i18n="emergencyCopy">Contact your local emergency medical service or get professional medical help immediately.</p>
+      <label for="countrySelect" data-i18n="country">Country or region</label>
+      <select id="countrySelect"><option value="other" data-i18n="other">Other</option><option value="india" data-i18n="india">India</option><option value="us" data-i18n="unitedStates">United States</option><option value="uk" data-i18n="unitedKingdom">United Kingdom</option></select>
+      <p id="emergencyNumber" class="emergency-number"></p>
+      <ul><li data-i18n="emergencyNearby">Ask someone nearby to call for help.</li><li data-i18n="emergencyAlone">Do not leave the person alone when it is unsafe to do so.</li><li data-i18n="emergencyDoNotDelay">Do not delay professional help because of this app.</li></ul>
+      <button type="button" class="button button-primary close-modal" data-i18n="understood">I understand</button>
+    </dialog>
+
+    <dialog id="settingsDialog" class="modal settings-modal" aria-labelledby="settingsTitle">
+      <div class="modal-top"><h2 id="settingsTitle">⚙ <span data-i18n="accessibility">Accessibility</span></h2><button type="button" class="icon-button close-modal" aria-label="Close">×</button></div>
+      <label class="toggle-row"><span data-i18n="largeText">Large text</span><input id="largeTextToggle" type="checkbox" role="switch" /></label>
+      <label class="toggle-row"><span data-i18n="highContrast">High contrast</span><input id="contrastToggle" type="checkbox" role="switch" /></label>
+      <label class="toggle-row"><span data-i18n="voiceGuidance">Voice guidance</span><input id="voiceGuidanceToggle" type="checkbox" role="switch" /></label>
+    </dialog>
+
+    <script src="data/translations.js"></script>
+    <script src="data/firstAidData.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
